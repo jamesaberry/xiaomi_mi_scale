@@ -1,18 +1,14 @@
 #############################################################################################
-# Code to read weight measurements fom Xiaomi Scale V2
-# (Framework is prsent to also read from Xiaomi Scale V1, though I do not own one to test so code has not been maintained)
+# Code to read weight measurements fom Xiaomi Scale V1
 # Must be executed with Python 3 else body measurements are incorrect.
 # Must be executed as root, therefore best to schedule via crontab every 5 min (so as not to drain the battery):
 # */5 * * * * python3 /path-to-script/Xiaomi_Scale.py
 # Multi user possible as long as weitghs do not overlap, see lines 117-131
 #
+# Thanks to @lolouk44 (https://github.com/lolouk44/xiaomi_mi_scale) from which this project is forked.
 # Thanks to @syssi (https://gist.github.com/syssi/4108a54877406dc231d95514e538bde9) and @prototux (https://github.com/wiecosystem/Bluetooth) for their initial code
 #
-# Make sure you edit MQTT credentials below and user logic/data on lines 117-131
-#
 #############################################################################################
-
-
 
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
@@ -22,19 +18,13 @@ import binascii
 import time
 import os
 import sys
+from pymongo import MongoClient
 from bluepy import btle
-import paho.mqtt.client as mqtt
 from datetime import datetime
 
 import Xiaomi_Scale_Body_Metrics
 
 MISCALE_MAC = 'REDACTED'
-MQTT_USERNAME = 'REDACTED'
-MQTT_PASSWORD = 'REDACTED'
-MQTT_HOST = 'REDACTED'
-MQTT_PORT = 1883
-MQTT_TIMEOUT = 60
-
 
 class ScanProcessor():
 
@@ -44,32 +34,21 @@ class ScanProcessor():
 		return abs((d2 - d1).days)/365
 
 	def __init__(self):
-		self.mqtt_client = None
 		self.connected = False
-		self._start_client()
 
 	def handleDiscovery(self, dev, isNewDev, isNewData):
 		if dev.addr == MISCALE_MAC.lower() and isNewDev:
-			# print ('	Device: %s (%s), %d dBm %s. ' %
-				   # (
-					   # ANSI_WHITE + dev.addr + ANSI_OFF,
-					   # dev.addrType,
-					   # dev.rssi,
-					   # ('' if dev.connectable else '(not connectable)'))
-				   # , end='')
 			for (sdid, desc, data) in dev.getScanData():
 				### Xiaomi V1 Scale ###
 				if data.startswith('1d18') and sdid == 22:
 					measunit = data[4:6]
 					measured = int((data[8:10] + data[6:8]), 16) * 0.01
 					unit = ''
-
-					if measunit.startswith(('03', 'b3')): unit = 'lbs'
+					if measunit.startswith(('03', 'a3')): unit = 'lbs'
 					if measunit.startswith(('12', 'b2')): unit = 'jin'
 					if measunit.startswith(('22', 'a2')): unit = 'kg' ; measured = measured / 2
 
 					if unit:
-						print('')
 						self._publish(round(measured, 2), unit, "", "")
 					else:
 						print("Scale is sleeping.")
@@ -85,10 +64,7 @@ class ScanProcessor():
 					mitdatetime = datetime.strptime(str(int((data[10:12] + data[8:10]), 16)) + " " + str(int((data[12:14]), 16)) +" "+ str(int((data[14:16]), 16)) +" "+ str(int((data[16:18]), 16)) +" "+ str(int((data[18:20]), 16)) +" "+ str(int((data[20:22]), 16)), "%Y %m %d %H %M %S")
 					miimpedance = str(int((data[24:26] + data[22:24]), 16))
 
-
-
 					if unit:
-						print('')
 						self._publish(round(measured, 2), unit, str(mitdatetime), miimpedance)
 					else:
 						print("Scale is sleeping.")
@@ -98,43 +74,19 @@ class ScanProcessor():
 				print ('\t(no data)')
 			print
 
-	def _start_client(self):
-		self.mqtt_client = mqtt.Client()
-		self.mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-
-		def _on_connect(client, _, flags, return_code):
-			self.connected = True
-			#print("MQTT connection returned result: %s" % mqtt.connack_string(return_code))
-
-		self.mqtt_client.on_connect = _on_connect
-
-		self.mqtt_client.connect(MQTT_HOST, MQTT_PORT, MQTT_TIMEOUT)
-		self.mqtt_client.loop_start()
-
 	def _publish(self, weight, unit, mitdatetime, miimpedance):
-		if not self.connected:
-			raise Exception('not connected to MQTT server')
-		if int(weight) > 72:
-			user="lolo"
-			height=175
-			age=self.GetAge("1900-01-01")
-			sex="male"
-		elif int(weight) < 50:
-			user="kiaan"
-			height=103
-			age=self.GetAge("1900-01-01")
-			sex="male"
-		else:
-			user = "div"
-			height=170
-			age=self.GetAge("1900-01-01")
-			sex="female"
+		user="JohnDoe"
+		height=175
+		age=self.GetAge("1900-01-01")
+		sex="male"
+
 		lib = Xiaomi_Scale_Body_Metrics.bodyMetrics(weight, height, age, sex, 0)
-		message = '{'
-		message += '"Weight":"' + "{:.2f}".format(weight) + '"'
-		message += ',"BMI":"' + "{:.2f}".format(lib.getBMI()) + '"'
-		message += ',"Basal Metabolism":"' + "{:.2f}".format(lib.getBMR()) + '"'
-		message += ',"Visceral Fat":"' + "{:.2f}".format(lib.getVisceralFat()) + '"'
+		message  = {}
+		message['user'] = user
+		message['weight'] = "{:.2f}".format(weight)
+		message['bmi'] = "{:.2f}".format(lib.getBMI())
+		message['basal_metabolism'] = "{:.2f}".format(lib.getBMR())
+		message['visceral_fat'] = "{:.2f}".format(lib.getVisceralFat())
 
 		if miimpedance:
 			lib = Xiaomi_Scale_Body_Metrics.bodyMetrics(weight, height, age, sex, int(miimpedance))
@@ -144,12 +96,36 @@ class ScanProcessor():
 			message += ',"Bone Mass":"' + "{:.2f}".format(lib.getBoneMass()) + '"'
 			message += ',"Muscle Mass":"' + "{:.2f}".format(lib.getMuscleMass()) + '"'
 			message += ',"Protein":"' + "{:.2f}".format(lib.getProteinPercentage()) + '"'
-			self.mqtt_client.publish(user, weight, qos=1, retain=True)
 
-		message += ',"TimeStamp":"' + mitdatetime + '"'
-		message += '}'
-		self.mqtt_client.publish(user+'/weight', message, qos=1, retain=True)
-		print('\tSent data to topic %s: %s' % (user+'/weight', message))
+		print('JSON: %s' % (message))
+		self._mongo(message, mitdatetime)
+
+	def _mongo(self, message, mitdatetime):
+
+		# Connect to Mongo
+		client = MongoClient('mongodb://localhost:27017')
+		db = client.scale_data
+		scale_data = db.scale_data
+
+		# Look for scale data that matches existing.
+		duplicate_readings = scale_data.find(message)
+
+		# Check if returned data matches within two days
+		# Only add new entry if data or day doesnt match
+		last_entry_today = False
+		for reading in duplicate_readings:
+			tdiff = datetime.now().timestamp() - float(reading['timestamp'])
+			if ( tdiff < 172800 ):
+				last_entry_today = True
+
+		# Only insert if not duplicated in last 48 hours
+		if not last_entry_today:
+			if mitdatetime:
+				message['timestamp'] = mitdatetime
+			else:
+				message['timestamp'] = str(datetime.now().timestamp())
+
+			scale_data.insert_one(message)
 
 def main():
 
