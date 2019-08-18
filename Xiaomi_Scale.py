@@ -5,7 +5,6 @@
 # */5 * * * * python3 /path-to-script/Xiaomi_Scale.py
 # Multi user possible as long as weitghs do not overlap, see lines 117-131
 #
-# Thanks to @lolouk44 (https://github.com/lolouk44/xiaomi_mi_scale) from which this project is forked.
 # Thanks to @syssi (https://gist.github.com/syssi/4108a54877406dc231d95514e538bde9) and @prototux (https://github.com/wiecosystem/Bluetooth) for their initial code
 #
 #############################################################################################
@@ -18,6 +17,7 @@ import binascii
 import time
 import os
 import sys
+import logging
 from pymongo import MongoClient
 from bluepy import btle
 from datetime import datetime
@@ -25,6 +25,8 @@ from datetime import datetime
 import Xiaomi_Scale_Body_Metrics
 
 MISCALE_MAC = 'REDACTED'
+
+logging.basicConfig(filename='scale.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
 
 class ScanProcessor():
 
@@ -51,7 +53,7 @@ class ScanProcessor():
 					if unit:
 						self._publish(round(measured, 2), unit, "", "")
 					else:
-						print("Scale is sleeping.")
+						logging.info("Scale is sleeping.")
 
 				### Xiaomi V2 Scale ###
 				if data.startswith('1b18') and sdid == 22:
@@ -67,12 +69,10 @@ class ScanProcessor():
 					if unit:
 						self._publish(round(measured, 2), unit, str(mitdatetime), miimpedance)
 					else:
-						print("Scale is sleeping.")
-
+						logging.info("Scale is sleeping.")
 
 			if not dev.scanData:
-				print ('\t(no data)')
-			print
+				logging.info('no data')
 
 	def _publish(self, weight, unit, mitdatetime, miimpedance):
 		user="JohnDoe"
@@ -97,7 +97,6 @@ class ScanProcessor():
 			message += ',"Muscle Mass":"' + "{:.2f}".format(lib.getMuscleMass()) + '"'
 			message += ',"Protein":"' + "{:.2f}".format(lib.getProteinPercentage()) + '"'
 
-		print('JSON: %s' % (message))
 		self._mongo(message, mitdatetime)
 
 	def _mongo(self, message, mitdatetime):
@@ -126,6 +125,9 @@ class ScanProcessor():
 				message['timestamp'] = str(datetime.now().timestamp())
 
 			scale_data.insert_one(message)
+			logging.info('Data Found: %s' % (message))
+		else:
+			logging.info('Skipping Duplicate Data')
 
 def main():
 

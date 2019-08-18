@@ -13,8 +13,8 @@ class bodyMetrics:
         # Check for potential out of boundaries
         if self.height > 220:
             raise Exception("Height is too high (limit: >220cm)")
-        elif weight < 10 or weight > 200:
-            raise Exception("Weight is either too low or too high (limits: <10kg and >200kg)")
+        elif weight < 10 or weight > 500:
+            raise Exception("Weight is either too low or too high (limits: <10 and >200)")
         elif age > 99:
             raise Exception("Age is too high (limit >99 years)")
         elif impedance > 3000:

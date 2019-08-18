@@ -33,7 +33,6 @@ C4:D3:8C:12:4C:57 MIBCS
 
 ## To Do
 - I plan to put together a very basic webpage to display the data this script collects. I plan to run the page on the same machine that i will run this script on and so I may include it in this project just to keep everything together.
-- Remember to add logging support.
 
 ## Acknowledgements:
 Thanks to @lolouk44 (https://github.com/lolouk44/xiaomi_mi_scale) from which this project is forked.
